@@ -7,8 +7,41 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="container">
+    <!-- AUTH SCREEN -->
+    <div class="container auth-container" id="authScreen" hidden>
         <header class="app-header">
+            <h1 id="authTitle">Giriş Yap</h1>
+            <p class="subtitle" id="authSubtitle">Görevlerine erişmek için giriş yap.</p>
+        </header>
+
+        <form class="auth-form" id="authForm">
+            <div class="field">
+                <label for="authEmail">E-posta</label>
+                <input type="email" id="authEmail" required autocomplete="email" placeholder="ornek@mail.com">
+            </div>
+            <div class="field">
+                <label for="authPassword">Şifre</label>
+                <input type="password" id="authPassword" required minlength="6" autocomplete="current-password" placeholder="En az 6 karakter">
+            </div>
+
+            <div class="auth-message" id="authMessage" hidden></div>
+
+            <button type="submit" class="btn-primary" id="authSubmit">Giriş Yap</button>
+
+            <p class="auth-switch">
+                <span id="authSwitchText">Hesabın yok mu?</span>
+                <button type="button" class="link-btn" id="authToggle">Kayıt ol</button>
+            </p>
+        </form>
+    </div>
+
+    <!-- APP SCREEN -->
+    <div class="container app-container" id="appScreen" hidden>
+        <header class="app-header">
+            <div class="user-bar">
+                <span class="user-email" id="userEmail"></span>
+                <button class="link-btn" id="signOutBtn">Çıkış</button>
+            </div>
             <h1>Yapılacaklar</h1>
             <p class="subtitle" id="subtitle">Bugün neler başaracaksın?</p>
         </header>
@@ -45,6 +78,11 @@
             <span id="remainingCount">0 görev kaldı</span>
             <button class="btn-clear" id="clearCompleted">Tamamlananları Sil</button>
         </footer>
+    </div>
+
+    <!-- BOOT / LOADING -->
+    <div class="boot" id="boot">
+        <div class="spinner"></div>
     </div>
 
     <script src="script.js"></script>
