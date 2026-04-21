@@ -40,6 +40,21 @@ let authMode = "signin"; // 'signin' | 'signup'
 let tasks = [];
 let currentFilter = "all";
 let isLoading = false;
+const plantAnimations = new Map(); // id -> 'plant' | 'bloom'
+
+const MOTIVATIONS_BLOOM = [
+    "Bir tohum daha çiçeklendi 🌸",
+    "Harika! Bahçen güzelleşiyor ✨",
+    "Emek boşa gitmedi, bak nasıl açtı 🌼",
+    "Bir adım daha doğaya yakın 🌿",
+    "Sen ektin, o çiçek açtı 🌷",
+];
+const MOTIVATIONS_FULL = "Bahçen bugün tamamen çiçekte 🌸🌻🌷";
+const MOTIVATIONS_PLANT = [
+    "Yeni bir tohum ektin 🌱",
+    "Güzel bir niyet toprağa düştü 🌰",
+    "Büyümesini izlemek için sabırla sula 💧",
+];
 
 // ===== Session Storage =====
 function saveSession(s) {
@@ -72,13 +87,24 @@ function clearAuthMessage() {
     authMessage.textContent = "";
 }
 
+const DEFAULT_SUBTITLE = "Bugün hangi tohumları ekeceksin?";
+
 function flashError(msg) {
     subtitle.textContent = msg;
     subtitle.style.color = "var(--danger)";
     setTimeout(() => {
-        subtitle.textContent = "Bugün neler başaracaksın?";
+        subtitle.textContent = DEFAULT_SUBTITLE;
         subtitle.style.color = "";
     }, 2500);
+}
+
+function flashSuccess(msg) {
+    subtitle.textContent = msg;
+    subtitle.classList.add("celebrate");
+    setTimeout(() => {
+        subtitle.textContent = DEFAULT_SUBTITLE;
+        subtitle.classList.remove("celebrate");
+    }, 2800);
 }
 
 // ===== Auth API =====
@@ -198,8 +224,7 @@ async function handleCallback(params) {
     clearHash();
 
     if (type === "signup") {
-        // optional UX message on first load after confirmation
-        setTimeout(() => flashError("E-posta doğrulandı, hoş geldin!"), 50);
+        setTimeout(() => flashSuccess("Bahçene hoş geldin 🌱"), 80);
     }
     return true;
 }
@@ -254,6 +279,10 @@ const removeTask = (id) => api(`?id=eq.${id}`, { method: "DELETE" });
 const removeCompleted = () => api(`?completed=eq.true`, { method: "DELETE" });
 
 // ===== Task handlers (optimistic) =====
+function randomOf(arr) {
+    return arr[Math.floor(Math.random() * arr.length)];
+}
+
 async function handleAdd(text) {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -267,7 +296,9 @@ async function handleAdd(text) {
         _pending: true,
     };
     tasks.unshift(optimistic);
+    plantAnimations.set(tempId, "plant");
     render();
+    flashSuccess(randomOf(MOTIVATIONS_PLANT));
 
     try {
         const saved = await insertTask(trimmed);
@@ -277,7 +308,7 @@ async function handleAdd(text) {
     } catch (e) {
         tasks = tasks.filter((t) => t.id !== tempId);
         render();
-        flashError("Görev eklenemedi.");
+        flashError("Tohum ekilemedi.");
         console.error(e);
     }
 }
@@ -287,7 +318,16 @@ async function handleToggle(id) {
     if (!task) return;
     const prev = task.completed;
     task.completed = !prev;
+    if (task.completed) {
+        plantAnimations.set(id, "bloom");
+    }
     render();
+
+    if (task.completed) {
+        const allDone = tasks.length > 0 && tasks.every((t) => t.completed);
+        flashSuccess(allDone ? MOTIVATIONS_FULL : randomOf(MOTIVATIONS_BLOOM));
+    }
+
     try {
         await patchTask(id, { completed: task.completed });
     } catch (e) {
@@ -301,14 +341,24 @@ async function handleToggle(id) {
 async function handleDelete(id) {
     const idx = tasks.findIndex((t) => t.id === id);
     if (idx === -1) return;
-    const [removed] = tasks.splice(idx, 1);
+
+    const li = taskList.querySelector(`[data-id="${CSS.escape(String(id))}"]`);
+    if (li) li.classList.add("wilting");
+
+    // wait for wilt animation before removing from state
+    await new Promise((r) => setTimeout(r, 430));
+
+    const currentIdx = tasks.findIndex((t) => t.id === id);
+    if (currentIdx === -1) return;
+    const [removed] = tasks.splice(currentIdx, 1);
     render();
+
     try {
         await removeTask(id);
     } catch (e) {
-        tasks.splice(idx, 0, removed);
+        tasks.splice(currentIdx, 0, removed);
         render();
-        flashError("Silinemedi.");
+        flashError("Sökülemedi.");
         console.error(e);
     }
 }
@@ -358,18 +408,43 @@ function getFilteredTasks() {
 const ICON_EDIT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`;
 const ICON_DELETE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"></path></svg>`;
 
-function renderTaskItem(task) {
+const BLOOMS = ["🌸", "🌻", "🌷", "🌺", "🌼", "🪻", "🌹"];
+
+function hashId(id) {
+    let h = 0;
+    const s = String(id);
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return Math.abs(h);
+}
+
+function emojiFor(task) {
+    if (task.completed) return BLOOMS[hashId(task.id) % BLOOMS.length];
+    return "🌱";
+}
+
+function renderTaskItem(task, { animatePlant } = {}) {
     const li = document.createElement("li");
     li.className = "task-item" + (task.completed ? " completed" : "");
     if (task._pending) li.style.opacity = "0.6";
     li.dataset.id = task.id;
 
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.className = "task-checkbox";
-    checkbox.checked = task.completed;
-    checkbox.disabled = !!task._pending;
-    checkbox.addEventListener("change", () => handleToggle(task.id));
+    const plantBtn = document.createElement("button");
+    plantBtn.type = "button";
+    plantBtn.className = "plant-btn";
+    plantBtn.title = task.completed ? "Tohuma geri döndür" : "Çiçeklendir";
+    plantBtn.setAttribute("aria-label", plantBtn.title);
+    plantBtn.setAttribute("aria-pressed", task.completed ? "true" : "false");
+    plantBtn.disabled = !!task._pending;
+
+    const emojiSpan = document.createElement("span");
+    emojiSpan.className = "plant-emoji";
+    emojiSpan.textContent = emojiFor(task);
+    plantBtn.appendChild(emojiSpan);
+
+    if (animatePlant === "plant") plantBtn.classList.add("planting");
+    if (animatePlant === "bloom") plantBtn.classList.add("blooming");
+
+    plantBtn.addEventListener("click", () => handleToggle(task.id));
 
     const textSpan = document.createElement("span");
     textSpan.className = "task-text";
@@ -392,18 +467,18 @@ function renderTaskItem(task) {
 
     const deleteBtn = document.createElement("button");
     deleteBtn.className = "icon-btn delete";
-    deleteBtn.title = "Sil";
-    deleteBtn.setAttribute("aria-label", "Sil");
+    deleteBtn.title = "Sök";
+    deleteBtn.setAttribute("aria-label", "Sök");
     deleteBtn.innerHTML = ICON_DELETE;
     deleteBtn.disabled = !!task._pending;
     deleteBtn.addEventListener("click", () => {
-        if (confirm("Bu görevi silmek istediğine emin misin?")) {
+        if (confirm("Bu bitkiyi bahçenden sökmek istediğine emin misin?")) {
             handleDelete(task.id);
         }
     });
 
     actions.append(editBtn, deleteBtn);
-    li.append(checkbox, textSpan, actions);
+    li.append(plantBtn, textSpan, actions);
     return li;
 }
 
@@ -451,39 +526,48 @@ function render() {
 
     if (isLoading) {
         emptyState.hidden = false;
-        emptyP.textContent = "Yükleniyor…";
-        emptyS.textContent = "Görevler getiriliyor.";
+        emptyP.textContent = "Bahçe canlanıyor…";
+        emptyS.textContent = "Tohumlar toprağa yerleşiyor.";
         appFooter.hidden = true;
         return;
     }
 
     if (tasks.length === 0) {
         emptyState.hidden = false;
-        emptyP.textContent = "Henüz bir görev yok.";
-        emptyS.textContent = "Yukarıdan ilk görevini ekleyebilirsin.";
+        emptyP.textContent = "Bahçen henüz boş.";
+        emptyS.textContent = "İlk niyet tohumunu ekmeye ne dersin?";
     } else if (filtered.length === 0) {
         emptyState.hidden = false;
-        emptyP.textContent = "Bu filtrede görev yok.";
-        emptyS.textContent = "Başka bir sekmeyi dene.";
+        emptyP.textContent = "Bu filtrede bitki yok.";
+        emptyS.textContent = "Başka bir sekmeyi deneyebilirsin.";
     } else {
         emptyState.hidden = true;
         const fragment = document.createDocumentFragment();
-        filtered.forEach((task) => fragment.appendChild(renderTaskItem(task)));
+        const toConsume = [];
+        filtered.forEach((task) => {
+            const anim = plantAnimations.get(task.id);
+            if (anim) toConsume.push(task.id);
+            fragment.appendChild(renderTaskItem(task, { animatePlant: anim }));
+        });
         taskList.appendChild(fragment);
+        toConsume.forEach((id) => plantAnimations.delete(id));
     }
 
     const remaining = tasks.filter((t) => !t.completed).length;
-    const hasCompleted = tasks.some((t) => t.completed);
+    const bloomed = tasks.filter((t) => t.completed).length;
 
     if (tasks.length === 0) {
         appFooter.hidden = true;
     } else {
         appFooter.hidden = false;
-        remainingCount.textContent =
-            remaining === 0
-                ? "Tüm görevler tamamlandı 🎉"
-                : `${remaining} görev kaldı`;
-        clearCompletedBtn.style.visibility = hasCompleted ? "visible" : "hidden";
+        if (remaining === 0) {
+            remainingCount.textContent = "Bütün bahçen çiçekte 🌸";
+        } else if (bloomed === 0) {
+            remainingCount.textContent = `${remaining} tohum filizleniyor 🌱`;
+        } else {
+            remainingCount.textContent = `${remaining} filiz · ${bloomed} çiçek`;
+        }
+        clearCompletedBtn.style.visibility = bloomed > 0 ? "visible" : "hidden";
     }
 }
 
@@ -505,18 +589,18 @@ function setAuthMode(mode) {
     authMode = mode;
     clearAuthMessage();
     if (mode === "signup") {
-        authTitle.textContent = "Kayıt Ol";
-        authSubtitle.textContent = "Yeni bir hesap oluştur.";
-        authSubmit.textContent = "Kayıt Ol";
-        authSwitchText.textContent = "Zaten hesabın var mı?";
+        authTitle.textContent = "Bahçeni Oluştur";
+        authSubtitle.textContent = "Kendi niyet bahçeni kurmaya başla.";
+        authSubmit.textContent = "Bahçeyi Aç";
+        authSwitchText.textContent = "Zaten bahçen var mı?";
         authToggle.textContent = "Giriş yap";
         authPassword.setAttribute("autocomplete", "new-password");
     } else {
-        authTitle.textContent = "Giriş Yap";
-        authSubtitle.textContent = "Görevlerine erişmek için giriş yap.";
+        authTitle.textContent = "Bahçene Gir";
+        authSubtitle.textContent = "Niyet tohumlarına dönmek için giriş yap.";
         authSubmit.textContent = "Giriş Yap";
-        authSwitchText.textContent = "Hesabın yok mu?";
-        authToggle.textContent = "Kayıt ol";
+        authSwitchText.textContent = "Henüz bahçen yok mu?";
+        authToggle.textContent = "Bahçeni oluştur";
         authPassword.setAttribute("autocomplete", "current-password");
     }
 }
