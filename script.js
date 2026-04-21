@@ -1,4 +1,8 @@
-const STORAGE_KEY = "todo.tasks.v1";
+const SUPABASE_URL = "https://neprqaxvdpqtjrxrvwka.supabase.co";
+const SUPABASE_ANON_KEY =
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5lcHJxYXh2ZHBxdGpyeHJ2d2thIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3NjEyNjYsImV4cCI6MjA5MjMzNzI2Nn0.vlMZPyJhhz1EJeZFKfjZl3DQ8KHMh5g7LWsovVoUiVI";
+const TABLE = "tasks";
+const REST = `${SUPABASE_URL}/rest/v1/${TABLE}`;
 
 const taskInput = document.getElementById("taskInput");
 const addForm = document.getElementById("addForm");
@@ -8,70 +12,176 @@ const filtersEl = document.getElementById("filters");
 const appFooter = document.getElementById("appFooter");
 const remainingCount = document.getElementById("remainingCount");
 const clearCompletedBtn = document.getElementById("clearCompleted");
+const subtitle = document.getElementById("subtitle");
 
-let tasks = loadTasks();
+let tasks = [];
 let currentFilter = "all";
+let isLoading = true;
 
-function loadTasks() {
-    try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        return raw ? JSON.parse(raw) : [];
-    } catch {
-        return [];
-    }
-}
-
-function saveTasks() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-}
-
-function createTask(text) {
+function apiHeaders(extra = {}) {
     return {
-        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-        text: text.trim(),
-        completed: false,
-        createdAt: Date.now(),
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        "Content-Type": "application/json",
+        ...extra,
     };
 }
 
-function addTask(text) {
-    if (!text.trim()) return;
-    tasks.unshift(createTask(text));
-    saveTasks();
-    render();
+async function api(path, options = {}) {
+    const res = await fetch(`${REST}${path}`, {
+        ...options,
+        headers: apiHeaders(options.headers),
+    });
+    if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        throw new Error(`${res.status} ${res.statusText} ${errText}`);
+    }
+    if (res.status === 204) return null;
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
 }
 
-function toggleTask(id) {
+async function fetchTasks() {
+    return api("?select=*&order=created_at.desc");
+}
+
+async function insertTask(text) {
+    const rows = await api("", {
+        method: "POST",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({ text }),
+    });
+    return rows[0];
+}
+
+async function patchTask(id, patch) {
+    const rows = await api(`?id=eq.${id}`, {
+        method: "PATCH",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify(patch),
+    });
+    return rows[0];
+}
+
+async function removeTask(id) {
+    await api(`?id=eq.${id}`, { method: "DELETE" });
+}
+
+async function removeCompleted() {
+    await api(`?completed=eq.true`, { method: "DELETE" });
+}
+
+function flashError(msg) {
+    subtitle.textContent = msg;
+    subtitle.style.color = "var(--danger)";
+    setTimeout(() => {
+        subtitle.textContent = "Bugün neler başaracaksın?";
+        subtitle.style.color = "";
+    }, 2500);
+}
+
+async function handleAdd(text) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    const tempId = `temp-${Date.now()}`;
+    const optimistic = {
+        id: tempId,
+        text: trimmed,
+        completed: false,
+        created_at: new Date().toISOString(),
+        _pending: true,
+    };
+    tasks.unshift(optimistic);
+    render();
+
+    try {
+        const saved = await insertTask(trimmed);
+        const idx = tasks.findIndex((t) => t.id === tempId);
+        if (idx !== -1) tasks[idx] = saved;
+        render();
+    } catch (e) {
+        tasks = tasks.filter((t) => t.id !== tempId);
+        render();
+        flashError("Görev eklenemedi.");
+        console.error(e);
+    }
+}
+
+async function handleToggle(id) {
     const task = tasks.find((t) => t.id === id);
     if (!task) return;
-    task.completed = !task.completed;
-    saveTasks();
+    const prev = task.completed;
+    task.completed = !prev;
     render();
+
+    try {
+        await patchTask(id, { completed: task.completed });
+    } catch (e) {
+        task.completed = prev;
+        render();
+        flashError("Güncellenemedi.");
+        console.error(e);
+    }
 }
 
-function deleteTask(id) {
-    tasks = tasks.filter((t) => t.id !== id);
-    saveTasks();
+async function handleDelete(id) {
+    const idx = tasks.findIndex((t) => t.id === id);
+    if (idx === -1) return;
+    const [removed] = tasks.splice(idx, 1);
     render();
+
+    try {
+        await removeTask(id);
+    } catch (e) {
+        tasks.splice(idx, 0, removed);
+        render();
+        flashError("Silinemedi.");
+        console.error(e);
+    }
 }
 
-function updateTask(id, newText) {
-    const task = tasks.find((t) => t.id === id);
-    if (!task) return;
+async function handleUpdate(id, newText) {
     const trimmed = newText.trim();
     if (!trimmed) {
-        deleteTask(id);
+        handleDelete(id);
+        return;
+    }
+    const task = tasks.find((t) => t.id === id);
+    if (!task) return;
+    const prev = task.text;
+    if (prev === trimmed) {
+        render();
         return;
     }
     task.text = trimmed;
-    saveTasks();
     render();
+
+    try {
+        await patchTask(id, { text: trimmed });
+    } catch (e) {
+        task.text = prev;
+        render();
+        flashError("Güncellenemedi.");
+        console.error(e);
+    }
 }
 
-function clearCompleted() {
+async function handleClearCompleted() {
+    const completed = tasks.filter((t) => t.completed);
+    if (completed.length === 0) return;
+    const backup = [...tasks];
     tasks = tasks.filter((t) => !t.completed);
-    saveTasks();
     render();
+
+    try {
+        await removeCompleted();
+    } catch (e) {
+        tasks = backup;
+        render();
+        flashError("Temizlenemedi.");
+        console.error(e);
+    }
 }
 
 function getFilteredTasks() {
@@ -86,19 +196,23 @@ const ICON_DELETE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 function renderTaskItem(task) {
     const li = document.createElement("li");
     li.className = "task-item" + (task.completed ? " completed" : "");
+    if (task._pending) li.style.opacity = "0.6";
     li.dataset.id = task.id;
 
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.className = "task-checkbox";
     checkbox.checked = task.completed;
-    checkbox.addEventListener("change", () => toggleTask(task.id));
+    checkbox.disabled = !!task._pending;
+    checkbox.addEventListener("change", () => handleToggle(task.id));
 
     const textSpan = document.createElement("span");
     textSpan.className = "task-text";
     textSpan.textContent = task.text;
     textSpan.title = "Düzenlemek için çift tıkla";
-    textSpan.addEventListener("dblclick", () => beginEdit(li, task));
+    textSpan.addEventListener("dblclick", () => {
+        if (!task._pending) beginEdit(li, task);
+    });
 
     const actions = document.createElement("div");
     actions.className = "task-actions";
@@ -108,6 +222,7 @@ function renderTaskItem(task) {
     editBtn.title = "Düzenle";
     editBtn.setAttribute("aria-label", "Düzenle");
     editBtn.innerHTML = ICON_EDIT;
+    editBtn.disabled = !!task._pending;
     editBtn.addEventListener("click", () => beginEdit(li, task));
 
     const deleteBtn = document.createElement("button");
@@ -115,9 +230,10 @@ function renderTaskItem(task) {
     deleteBtn.title = "Sil";
     deleteBtn.setAttribute("aria-label", "Sil");
     deleteBtn.innerHTML = ICON_DELETE;
+    deleteBtn.disabled = !!task._pending;
     deleteBtn.addEventListener("click", () => {
         if (confirm("Bu görevi silmek istediğine emin misin?")) {
-            deleteTask(task.id);
+            handleDelete(task.id);
         }
     });
 
@@ -136,10 +252,18 @@ function beginEdit(li, task) {
     input.type = "text";
     input.className = "task-edit-input";
     input.value = task.text;
-    input.maxLength = 120;
+    input.maxLength = 500;
 
-    const commit = () => updateTask(task.id, input.value);
-    const cancel = () => render();
+    let submitted = false;
+    const commit = () => {
+        if (submitted) return;
+        submitted = true;
+        handleUpdate(task.id, input.value);
+    };
+    const cancel = () => {
+        submitted = true;
+        render();
+    };
 
     input.addEventListener("keydown", (e) => {
         if (e.key === "Enter") commit();
@@ -157,14 +281,25 @@ function render() {
     const filtered = getFilteredTasks();
     taskList.innerHTML = "";
 
+    const emptyP = emptyState.querySelector("p");
+    const emptyS = emptyState.querySelector("span");
+
+    if (isLoading) {
+        emptyState.hidden = false;
+        emptyP.textContent = "Yükleniyor…";
+        emptyS.textContent = "Supabase'den görevler getiriliyor.";
+        appFooter.hidden = true;
+        return;
+    }
+
     if (tasks.length === 0) {
         emptyState.hidden = false;
-        emptyState.querySelector("p").textContent = "Henüz bir görev yok.";
-        emptyState.querySelector("span").textContent = "Yukarıdan ilk görevini ekleyebilirsin.";
+        emptyP.textContent = "Henüz bir görev yok.";
+        emptyS.textContent = "Yukarıdan ilk görevini ekleyebilirsin.";
     } else if (filtered.length === 0) {
         emptyState.hidden = false;
-        emptyState.querySelector("p").textContent = "Bu filtrede görev yok.";
-        emptyState.querySelector("span").textContent = "Başka bir sekmeyi dene.";
+        emptyP.textContent = "Bu filtrede görev yok.";
+        emptyS.textContent = "Başka bir sekmeyi dene.";
     } else {
         emptyState.hidden = true;
         const fragment = document.createDocumentFragment();
@@ -189,9 +324,10 @@ function render() {
 
 addForm.addEventListener("submit", (e) => {
     e.preventDefault();
-    addTask(taskInput.value);
+    const value = taskInput.value;
     taskInput.value = "";
     taskInput.focus();
+    handleAdd(value);
 });
 
 filtersEl.addEventListener("click", (e) => {
@@ -202,6 +338,21 @@ filtersEl.addEventListener("click", (e) => {
     render();
 });
 
-clearCompletedBtn.addEventListener("click", clearCompleted);
+clearCompletedBtn.addEventListener("click", handleClearCompleted);
 
-render();
+async function init() {
+    render();
+    try {
+        tasks = await fetchTasks();
+        isLoading = false;
+        render();
+    } catch (e) {
+        isLoading = false;
+        tasks = [];
+        render();
+        flashError("Görevler yüklenemedi.");
+        console.error(e);
+    }
+}
+
+init();
