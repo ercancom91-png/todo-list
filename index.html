@@ -16,6 +16,26 @@
         <span class="floater f5">🌿</span>
     </div>
 
+    <!-- RECOVERY SCREEN -->
+    <div class="container auth-container" id="recoveryScreen" hidden>
+        <header class="app-header">
+            <div class="garden-logo" aria-hidden="true">🌸</div>
+            <h1>Şifreni Yenile</h1>
+            <p class="subtitle">Bahçene dönebilmek için yeni bir şifre belirle.</p>
+        </header>
+
+        <form class="auth-form" id="recoveryForm">
+            <div class="field">
+                <label for="newPassword">Yeni Şifre</label>
+                <input type="password" id="newPassword" required minlength="6" autocomplete="new-password" placeholder="En az 6 karakter">
+            </div>
+
+            <div class="auth-message" id="recoveryMessage" hidden></div>
+
+            <button type="submit" class="btn-primary" id="recoverySubmit">Şifreyi Güncelle</button>
+        </form>
+    </div>
+
     <!-- AUTH SCREEN -->
     <div class="container auth-container" id="authScreen" hidden>
         <header class="app-header">
@@ -41,6 +61,33 @@
             <p class="auth-switch">
                 <span id="authSwitchText">Henüz bahçen yok mu?</span>
                 <button type="button" class="link-btn" id="authToggle">Bahçeni oluştur</button>
+            </p>
+            <p class="auth-switch">
+                <button type="button" class="link-btn" id="forgotBtn">Şifremi unuttum</button>
+            </p>
+        </form>
+    </div>
+
+    <!-- FORGOT PASSWORD SCREEN -->
+    <div class="container auth-container" id="forgotScreen" hidden>
+        <header class="app-header">
+            <div class="garden-logo" aria-hidden="true">🌿</div>
+            <h1>Şifreni Sıfırla</h1>
+            <p class="subtitle">E-posta adresini gir; sıfırlama bağlantısı gönderelim.</p>
+        </header>
+
+        <form class="auth-form" id="forgotForm">
+            <div class="field">
+                <label for="forgotEmail">E-posta</label>
+                <input type="email" id="forgotEmail" required autocomplete="email" placeholder="ornek@mail.com">
+            </div>
+
+            <div class="auth-message" id="forgotMessage" hidden></div>
+
+            <button type="submit" class="btn-primary" id="forgotSubmit">Sıfırlama Bağlantısı Gönder</button>
+
+            <p class="auth-switch">
+                <button type="button" class="link-btn" id="backToSignInBtn">Girişe dön</button>
             </p>
         </form>
     </div>

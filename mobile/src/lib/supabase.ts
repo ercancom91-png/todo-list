@@ -10,7 +10,15 @@ const TABLE = "tasks";
 const REST = `${SUPABASE_URL}/rest/v1/${TABLE}`;
 const AUTH = `${SUPABASE_URL}/auth/v1`;
 
+// Email confirmation lands here. In dev and until deep-link scheme is
+// whitelisted in Supabase uri_allow_list, use the web site which is
+// already allow-listed. The user can confirm in the browser, then
+// sign in on mobile with the same credentials.
+const WEB_URL = "https://ercancom91-png.github.io/todo-list/";
+
 export function redirectUrl(): string {
+  if (__DEV__) return WEB_URL;
+  // Standalone build: bahcem:// — requires uri_allow_list entry.
   return Linking.createURL("/");
 }
 
@@ -40,6 +48,19 @@ export async function signIn(email: string, password: string): Promise<Session> 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(extractErrorMessage(data, res.status));
   return sessionFromTokenResponse(data);
+}
+
+export async function recoverPassword(email: string): Promise<void> {
+  const url = `${AUTH}/recover?redirect_to=${encodeURIComponent(redirectUrl())}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(data, res.status));
+  }
 }
 
 export async function signOutRemote(session: Session): Promise<void> {
@@ -155,10 +176,19 @@ export const removeTask = (session: Session, id: string, onUnauthorized?: () => 
 export const removeCompleted = (session: Session, onUnauthorized?: () => void) =>
   api(session, `?completed=eq.true`, { method: "DELETE" }, onUnauthorized);
 
-export function friendlyAuthError(raw: string): string {
-  if (/Email not confirmed/i.test(raw)) return "E-postan henüz onaylanmadı. Gelen kutunu kontrol et.";
-  if (/Invalid login credentials/i.test(raw)) return "E-posta veya şifre hatalı.";
-  if (/User already registered/i.test(raw)) return "Bu e-posta zaten kayıtlı. Giriş yapmayı dene.";
-  if (/Password should be at least/i.test(raw)) return "Şifre en az 6 karakter olmalı.";
-  return raw;
+export type AuthErrorKey =
+  | "auth.error.emailNotConfirmed"
+  | "auth.error.invalidCredentials"
+  | "auth.error.alreadyRegistered"
+  | "auth.error.passwordTooShort"
+  | "auth.error.rateLimit";
+
+export function authErrorKey(raw: string): AuthErrorKey | null {
+  if (/Email not confirmed/i.test(raw)) return "auth.error.emailNotConfirmed";
+  if (/Invalid login credentials/i.test(raw)) return "auth.error.invalidCredentials";
+  if (/User already registered/i.test(raw)) return "auth.error.alreadyRegistered";
+  if (/Password should be at least/i.test(raw)) return "auth.error.passwordTooShort";
+  if (/rate limit|for security purposes|over email send rate/i.test(raw))
+    return "auth.error.rateLimit";
+  return null;
 }

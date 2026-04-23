@@ -9,6 +9,7 @@ import { AppScreen } from "./src/screens/AppScreen";
 import { loadSession, saveSession } from "./src/lib/session";
 import { fetchUserFromToken } from "./src/lib/supabase";
 import { colors } from "./src/theme";
+import { I18nProvider } from "./src/i18n";
 import type { Session } from "./src/types";
 
 function parseHash(url: string): Record<string, string> | null {
@@ -26,6 +27,14 @@ function parseHash(url: string): Record<string, string> | null {
 }
 
 export default function App() {
+  return (
+    <I18nProvider>
+      <AppRoot />
+    </I18nProvider>
+  );
+}
+
+function AppRoot() {
   const [session, setSession] = useState<Session | null>(null);
   const [booting, setBooting] = useState(true);
 

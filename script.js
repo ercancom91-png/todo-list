@@ -11,6 +11,8 @@ const SESSION_KEY = "todo.session.v1";
 const boot = document.getElementById("boot");
 const authScreen = document.getElementById("authScreen");
 const appScreen = document.getElementById("appScreen");
+const recoveryScreen = document.getElementById("recoveryScreen");
+const forgotScreen = document.getElementById("forgotScreen");
 
 const authForm = document.getElementById("authForm");
 const authEmail = document.getElementById("authEmail");
@@ -21,6 +23,18 @@ const authSubtitle = document.getElementById("authSubtitle");
 const authSwitchText = document.getElementById("authSwitchText");
 const authToggle = document.getElementById("authToggle");
 const authMessage = document.getElementById("authMessage");
+const forgotBtn = document.getElementById("forgotBtn");
+
+const recoveryForm = document.getElementById("recoveryForm");
+const newPasswordInput = document.getElementById("newPassword");
+const recoveryMessage = document.getElementById("recoveryMessage");
+const recoverySubmit = document.getElementById("recoverySubmit");
+
+const forgotForm = document.getElementById("forgotForm");
+const forgotEmailInput = document.getElementById("forgotEmail");
+const forgotMessage = document.getElementById("forgotMessage");
+const forgotSubmit = document.getElementById("forgotSubmit");
+const backToSignInBtn = document.getElementById("backToSignInBtn");
 
 const userEmailEl = document.getElementById("userEmail");
 const signOutBtn = document.getElementById("signOutBtn");
@@ -144,6 +158,35 @@ async function signIn(email, password) {
     return authFetch("/token?grant_type=password", { email, password });
 }
 
+async function recoverPassword(email) {
+    const url = `${AUTH}/recover?redirect_to=${encodeURIComponent(SITE_URL)}`;
+    const res = await fetch(url, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+    });
+    if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.msg || data.error_description || data.message || `Hata (${res.status})`);
+    }
+}
+
+async function updatePassword(newPassword) {
+    const res = await fetch(`${AUTH}/user`, {
+        method: "PUT",
+        headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ password: newPassword }),
+    });
+    if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.msg || data.error_description || data.message || `Hata (${res.status})`);
+    }
+}
+
 async function signOut() {
     if (!session) return;
     try {
@@ -223,6 +266,10 @@ async function handleCallback(params) {
     });
     clearHash();
 
+    if (type === "recovery") {
+        showRecoveryScreen();
+        return "recovery";
+    }
     if (type === "signup") {
         setTimeout(() => flashSuccess("Bahçene hoş geldin 🌱"), 80);
     }
@@ -572,17 +619,51 @@ function render() {
 }
 
 // ===== Screen switching =====
-function showAuthScreen() {
-    authScreen.hidden = false;
+function hideAllScreens() {
+    authScreen.hidden = true;
     appScreen.hidden = true;
+    recoveryScreen.hidden = true;
+    forgotScreen.hidden = true;
     boot.hidden = true;
 }
 
+function showAuthScreen() {
+    hideAllScreens();
+    authScreen.hidden = false;
+}
+
 function showAppScreen() {
-    authScreen.hidden = true;
+    hideAllScreens();
     appScreen.hidden = false;
-    boot.hidden = true;
     userEmailEl.textContent = session?.user?.email || "";
+}
+
+function showRecoveryScreen() {
+    hideAllScreens();
+    recoveryScreen.hidden = false;
+    recoveryMessage.hidden = true;
+    newPasswordInput.value = "";
+    setTimeout(() => newPasswordInput.focus(), 100);
+}
+
+function showForgotScreen() {
+    hideAllScreens();
+    forgotScreen.hidden = false;
+    forgotMessage.hidden = true;
+    forgotEmailInput.value = authEmail.value || "";
+    setTimeout(() => forgotEmailInput.focus(), 100);
+}
+
+function showRecoveryMessage(text, type = "info") {
+    recoveryMessage.textContent = text;
+    recoveryMessage.className = `auth-message ${type}`;
+    recoveryMessage.hidden = false;
+}
+
+function showForgotMessage(text, type = "info") {
+    forgotMessage.textContent = text;
+    forgotMessage.className = `auth-message ${type}`;
+    forgotMessage.hidden = false;
 }
 
 function setAuthMode(mode) {
@@ -653,6 +734,68 @@ authForm.addEventListener("submit", async (e) => {
     }
 });
 
+forgotBtn.addEventListener("click", () => {
+    showForgotScreen();
+});
+
+backToSignInBtn.addEventListener("click", () => {
+    showAuthScreen();
+});
+
+forgotForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const email = forgotEmailInput.value.trim();
+    if (!email) return;
+
+    forgotMessage.hidden = true;
+    forgotSubmit.disabled = true;
+    const originalLabel = forgotSubmit.textContent;
+    forgotSubmit.textContent = "Gönderiliyor…";
+
+    try {
+        await recoverPassword(email);
+        showForgotMessage(
+            `${email} adresine bir sıfırlama bağlantısı gönderildi. Gelen kutunu kontrol et.`,
+            "success"
+        );
+    } catch (err) {
+        const msg = String(err.message || err);
+        showForgotMessage(
+            /rate limit|for security purposes|over email send rate/i.test(msg)
+                ? "Kısa sürede çok fazla istek gönderildi. Bir süre bekleyip tekrar dene."
+                : msg,
+            "error"
+        );
+    } finally {
+        forgotSubmit.disabled = false;
+        forgotSubmit.textContent = originalLabel;
+    }
+});
+
+recoveryForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const newPass = newPasswordInput.value;
+    if (!newPass || newPass.length < 6) {
+        showRecoveryMessage("Şifre en az 6 karakter olmalı.", "error");
+        return;
+    }
+    recoverySubmit.disabled = true;
+    const originalLabel = recoverySubmit.textContent;
+    recoverySubmit.textContent = "Güncelleniyor…";
+
+    try {
+        await updatePassword(newPass);
+        showRecoveryMessage("Şifre güncellendi. Bahçene yönlendiriliyorsun…", "success");
+        setTimeout(() => {
+            bootApp();
+        }, 1200);
+    } catch (err) {
+        showRecoveryMessage(err.message || "Şifre güncellenemedi.", "error");
+        recoverySubmit.disabled = false;
+        recoverySubmit.textContent = originalLabel;
+    }
+});
+
 signOutBtn.addEventListener("click", signOut);
 
 addForm.addEventListener("submit", (e) => {
@@ -691,11 +834,12 @@ async function bootApp() {
 async function init() {
     setAuthMode("signin");
 
-    // 1. Handle email confirmation callback if present in URL hash
+    // 1. Handle email confirmation / recovery callback if present in URL hash
     const params = parseHashParams();
     if (params) {
-        const ok = await handleCallback(params);
-        if (ok) {
+        const result = await handleCallback(params);
+        if (result === "recovery") return; // recovery screen already shown
+        if (result === true) {
             await bootApp();
             return;
         }

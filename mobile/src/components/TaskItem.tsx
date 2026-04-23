@@ -12,6 +12,7 @@ import { Pencil, Sprout, Trash2, Check } from "lucide-react-native";
 import { colors, radii, spacing, typography } from "../theme";
 import { selectionTap } from "../lib/haptics";
 import type { Task } from "../types";
+import { useI18n } from "../i18n";
 
 interface Props {
   task: Task;
@@ -22,6 +23,7 @@ interface Props {
 }
 
 export function TaskItem({ task, justAdded, onToggle, onRequestDelete, onUpdate }: Props) {
+  const { t } = useI18n();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(task.text);
   const editInputRef = useRef<TextInput>(null);
@@ -70,15 +72,14 @@ export function TaskItem({ task, justAdded, onToggle, onRequestDelete, onUpdate 
   const handleDeletePress = () => {
     if (task._pending) return;
     Alert.alert(
-      "Niyeti sil",
-      "Bu niyeti silmek istediğine emin misin?",
+      t("task.deleteConfirm.title"),
+      t("task.deleteConfirm.body"),
       [
-        { text: "Vazgeç", style: "cancel" },
+        { text: t("common.cancel"), style: "cancel" },
         {
-          text: "Sil",
+          text: t("common.delete"),
           style: "destructive",
           onPress: () => {
-            // wilt animation then call parent
             opacity.value = withTiming(0, { duration: 220, easing: Easing.in(Easing.ease) });
             translateX.value = withTiming(20, { duration: 220, easing: Easing.in(Easing.ease) }, () => {
               runOnJS(triggerDelete)();
@@ -130,7 +131,7 @@ export function TaskItem({ task, justAdded, onToggle, onRequestDelete, onUpdate 
         style={[styles.plantBtn, task.completed && styles.plantBtnDone]}
         hitSlop={8}
         accessibilityRole="button"
-        accessibilityLabel={task.completed ? "Tohuma geri döndür" : "Çiçeklendir"}
+        accessibilityLabel={task.completed ? t("task.a11y.markUndone") : t("task.a11y.markDone")}
       >
         {task.completed ? (
           <Check size={18} color={colors.white} strokeWidth={3} />
@@ -169,7 +170,7 @@ export function TaskItem({ task, justAdded, onToggle, onRequestDelete, onUpdate 
             onPress={beginEdit}
             style={styles.iconBtn}
             hitSlop={6}
-            accessibilityLabel="Düzenle"
+            accessibilityLabel={t("task.a11y.edit")}
             disabled={!!task._pending}
           >
             <Pencil size={16} color={colors.textMuted} strokeWidth={1.8} />
@@ -178,7 +179,7 @@ export function TaskItem({ task, justAdded, onToggle, onRequestDelete, onUpdate 
             onPress={handleDeletePress}
             style={styles.iconBtn}
             hitSlop={6}
-            accessibilityLabel="Sil"
+            accessibilityLabel={t("task.a11y.delete")}
             disabled={!!task._pending}
           >
             <Trash2 size={16} color={colors.textMuted} strokeWidth={1.8} />
@@ -187,7 +188,7 @@ export function TaskItem({ task, justAdded, onToggle, onRequestDelete, onUpdate 
       ) : (
         <View style={styles.actions}>
           <Pressable onPress={cancelEdit} style={styles.iconBtn} hitSlop={6}>
-            <Text style={styles.cancelText}>Vazgeç</Text>
+            <Text style={styles.cancelText}>{t("common.cancel")}</Text>
           </Pressable>
         </View>
       )}

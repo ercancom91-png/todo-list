@@ -29,6 +29,8 @@ import { Filters } from "../components/Filters";
 import { TaskItem } from "../components/TaskItem";
 import { Empty } from "../components/Empty";
 import { Toast, ToastKind } from "../components/Toast";
+import { LocaleToggle } from "../components/LocaleToggle";
+import { useI18n } from "../i18n";
 
 interface Props {
   session: Session;
@@ -36,6 +38,7 @@ interface Props {
 }
 
 export function AppScreen({ session, onSignedOut }: Props) {
+  const { t } = useI18n();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -64,14 +67,14 @@ export function AppScreen({ session, onSignedOut }: Props) {
       } catch (e) {
         if (!(e instanceof Error && e.message === "unauthorized")) {
           console.warn("fetchTasks failed", e);
-          showToast("Görevler yüklenemedi.", "error");
+          showToast(t("app.error.loadFailed"), "error");
         }
       } finally {
         if (isRefresh) setRefreshing(false);
         else setLoading(false);
       }
     },
-    [session, handleUnauthorized]
+    [session, handleUnauthorized, t]
   );
 
   useEffect(() => {
@@ -96,88 +99,87 @@ export function AppScreen({ session, onSignedOut }: Props) {
 
     try {
       const saved = await insertTask(session, text, handleUnauthorized);
-      setTasks((prev) => prev.map((t) => (t.id === tempId ? saved : t)));
+      setTasks((prev) => prev.map((it) => (it.id === tempId ? saved : it)));
       setJustAddedId(saved.id);
     } catch (e) {
       if (e instanceof Error && e.message === "unauthorized") return;
-      setTasks((prev) => prev.filter((t) => t.id !== tempId));
-      showToast("Görev eklenemedi.", "error");
+      setTasks((prev) => prev.filter((it) => it.id !== tempId));
+      showToast(t("app.error.addFailed"), "error");
     }
   };
 
   const handleToggle = async (id: string) => {
-    const target = tasks.find((t) => t.id === id);
+    const target = tasks.find((it) => it.id === id);
     if (!target) return;
     const nextCompleted = !target.completed;
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, completed: nextCompleted } : t)));
+    setTasks((prev) => prev.map((it) => (it.id === id ? { ...it, completed: nextCompleted } : it)));
 
     try {
       await patchTask(session, id, { completed: nextCompleted }, handleUnauthorized);
     } catch (e) {
       if (e instanceof Error && e.message === "unauthorized") return;
-      setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, completed: !nextCompleted } : t)));
-      showToast("Güncellenemedi.", "error");
+      setTasks((prev) => prev.map((it) => (it.id === id ? { ...it, completed: !nextCompleted } : it)));
+      showToast(t("app.error.updateFailed"), "error");
     }
   };
 
   const handleDelete = async (id: string) => {
     const backup = tasks;
-    const target = tasks.find((t) => t.id === id);
+    const target = tasks.find((it) => it.id === id);
     if (!target) return;
-    setTasks((prev) => prev.filter((t) => t.id !== id));
+    setTasks((prev) => prev.filter((it) => it.id !== id));
 
     try {
       await removeTask(session, id, handleUnauthorized);
     } catch (e) {
       if (e instanceof Error && e.message === "unauthorized") return;
       setTasks(backup);
-      showToast("Silinemedi.", "error");
+      showToast(t("app.error.deleteFailed"), "error");
     }
   };
 
   const handleUpdate = async (id: string, newText: string) => {
-    const target = tasks.find((t) => t.id === id);
+    const target = tasks.find((it) => it.id === id);
     if (!target) return;
     if (!newText) {
-      // Empty → delegate to delete flow
-      Alert.alert("Boş metin", "Görevi silmek ister misin?", [
-        { text: "Vazgeç", style: "cancel" },
-        { text: "Sil", style: "destructive", onPress: () => handleDelete(id) },
+      Alert.alert(t("app.editEmpty.title"), t("app.editEmpty.body"), [
+        { text: t("common.cancel"), style: "cancel" },
+        { text: t("common.delete"), style: "destructive", onPress: () => handleDelete(id) },
       ]);
       return;
     }
     if (newText === target.text) return;
     const prev = target.text;
-    setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, text: newText } : t)));
+    setTasks((ts) => ts.map((it) => (it.id === id ? { ...it, text: newText } : it)));
     try {
       await patchTask(session, id, { text: newText }, handleUnauthorized);
     } catch (e) {
       if (e instanceof Error && e.message === "unauthorized") return;
-      setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, text: prev } : t)));
-      showToast("Güncellenemedi.", "error");
+      setTasks((ts) => ts.map((it) => (it.id === id ? { ...it, text: prev } : it)));
+      showToast(t("app.error.updateFailed"), "error");
     }
   };
 
   const handleClearCompleted = async () => {
-    const done = tasks.filter((t) => t.completed);
+    const done = tasks.filter((it) => it.completed);
     if (done.length === 0) return;
     Alert.alert(
-      "Tamamlananları temizle",
-      `${done.length} tamamlanan görev silinecek.`,
+      t("app.clearConfirm.title"),
+      t("app.clearConfirm.body", { count: done.length }),
       [
-        { text: "Vazgeç", style: "cancel" },
+        { text: t("common.cancel"), style: "cancel" },
         {
-          text: "Temizle",
+          text: t("app.clearConfirm.yes"),
           style: "destructive",
           onPress: async () => {
             const backup = tasks;
-            setTasks((prev) => prev.filter((t) => !t.completed));
+            setTasks((prev) => prev.filter((it) => !it.completed));
             try {
               await removeCompleted(session, handleUnauthorized);
             } catch (e) {
               if (e instanceof Error && e.message === "unauthorized") return;
               setTasks(backup);
-              showToast("Temizlenemedi.", "error");
+              showToast(t("app.error.clearFailed"), "error");
             }
           },
         },
@@ -186,10 +188,10 @@ export function AppScreen({ session, onSignedOut }: Props) {
   };
 
   const handleSignOut = () => {
-    Alert.alert("Çıkış", "Hesaptan çıkmak istediğine emin misin?", [
-      { text: "Vazgeç", style: "cancel" },
+    Alert.alert(t("app.signOutConfirm.title"), t("app.signOutConfirm.body"), [
+      { text: t("common.cancel"), style: "cancel" },
       {
-        text: "Çıkış yap",
+        text: t("app.signOutConfirm.yes"),
         style: "destructive",
         onPress: async () => {
           await signOutRemote(session);
@@ -201,13 +203,20 @@ export function AppScreen({ session, onSignedOut }: Props) {
   };
 
   const filtered = useMemo(() => {
-    if (filter === "active") return tasks.filter((t) => !t.completed);
-    if (filter === "completed") return tasks.filter((t) => t.completed);
+    if (filter === "active") return tasks.filter((it) => !it.completed);
+    if (filter === "completed") return tasks.filter((it) => it.completed);
     return tasks;
   }, [tasks, filter]);
 
-  const remaining = tasks.filter((t) => !t.completed).length;
-  const bloomed = tasks.filter((t) => t.completed).length;
+  const remaining = tasks.filter((it) => !it.completed).length;
+  const bloomed = tasks.filter((it) => it.completed).length;
+
+  const footerText =
+    remaining === 0
+      ? t("app.footer.allDone")
+      : bloomed === 0
+        ? t("app.footer.onlyGrowing", { remaining })
+        : t("app.footer.mixed", { remaining, bloomed });
 
   return (
     <KeyboardAvoidingView
@@ -219,15 +228,18 @@ export function AppScreen({ session, onSignedOut }: Props) {
       <View style={styles.header}>
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.title}>Bahçem</Text>
+            <Text style={styles.title}>{t("common.appName")}</Text>
             <Text style={styles.subtitle} numberOfLines={1}>
-              {session.user?.email ?? "Niyetlerini kaydet ve takip et."}
+              {session.user?.email ?? t("app.defaultSubtitle")}
             </Text>
           </View>
-          <Pressable onPress={handleSignOut} style={styles.signOutBtn} hitSlop={8}>
-            <LogOut size={16} color={colors.textMuted} strokeWidth={1.8} />
-            <Text style={styles.signOutText}>Çıkış</Text>
-          </Pressable>
+          <View style={styles.headerActions}>
+            <LocaleToggle />
+            <Pressable onPress={handleSignOut} style={styles.signOutBtn} hitSlop={8}>
+              <LogOut size={16} color={colors.textMuted} strokeWidth={1.8} />
+              <Text style={styles.signOutText}>{t("app.signOut")}</Text>
+            </Pressable>
+          </View>
         </View>
       </View>
 
@@ -236,7 +248,7 @@ export function AppScreen({ session, onSignedOut }: Props) {
           value={input}
           onChangeText={setInput}
           onSubmitEditing={handleAdd}
-          placeholder="Yeni bir niyet ekle..."
+          placeholder={t("app.addPlaceholder")}
           placeholderTextColor={colors.textSubtle}
           style={styles.addInput}
           maxLength={120}
@@ -246,7 +258,7 @@ export function AppScreen({ session, onSignedOut }: Props) {
         <Pressable
           onPress={handleAdd}
           style={({ pressed }) => [styles.addBtn, pressed && styles.addBtnPressed]}
-          accessibilityLabel="Görev ekle"
+          accessibilityLabel={t("app.addAction")}
         >
           <Plus size={20} color={colors.white} strokeWidth={2.4} />
         </Pressable>
@@ -282,9 +294,9 @@ export function AppScreen({ session, onSignedOut }: Props) {
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={
             tasks.length === 0 ? (
-              <Empty title="Henüz bir niyet yok." hint="İlk niyetini ekleyerek başla." />
+              <Empty title={t("app.empty.noTasks.title")} hint={t("app.empty.noTasks.hint")} />
             ) : (
-              <Empty title="Bu filtrede görev yok." hint="Başka bir sekmeyi dene." />
+              <Empty title={t("app.empty.noMatch.title")} hint={t("app.empty.noMatch.hint")} />
             )
           }
           refreshControl={
@@ -301,19 +313,13 @@ export function AppScreen({ session, onSignedOut }: Props) {
 
       {tasks.length > 0 ? (
         <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            {remaining === 0
-              ? "Tüm niyetlerin tamamlandı."
-              : bloomed === 0
-                ? `${remaining} filizleniyor`
-                : `${remaining} filiz · ${bloomed} çiçek`}
-          </Text>
+          <Text style={styles.footerText}>{footerText}</Text>
           {bloomed > 0 ? (
             <Pressable onPress={handleClearCompleted} hitSlop={6}>
-              <Text style={styles.clearText}>Tamamlananları temizle</Text>
+              <Text style={styles.clearText}>{t("app.footer.clearCompleted")}</Text>
             </Pressable>
           ) : (
-            <Text /> /* spacer */
+            <Text />
           )}
         </View>
       ) : null}
@@ -331,7 +337,12 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing[3],
+    gap: spacing[2],
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing[2],
   },
   title: {
     ...typography.title,

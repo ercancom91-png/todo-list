@@ -12,42 +12,55 @@ import {
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { colors, radii, spacing, typography } from "../theme";
-import { friendlyAuthError, sessionFromTokenResponse, signIn, signUp } from "../lib/supabase";
+import {
+  authErrorKey,
+  recoverPassword,
+  sessionFromTokenResponse,
+  signIn,
+  signUp,
+} from "../lib/supabase";
 import { saveSession } from "../lib/session";
 import type { Session } from "../types";
 import { Toast, ToastKind } from "../components/Toast";
+import { LocaleToggle } from "../components/LocaleToggle";
+import { useI18n } from "../i18n";
 
-type Mode = "signin" | "signup";
+type Mode = "signin" | "signup" | "recover";
 
 interface Props {
   onSignedIn: (session: Session) => void;
 }
 
 export function AuthScreen({ onSignedIn }: Props) {
+  const { t } = useI18n();
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<{ message: string; kind: ToastKind; token: number } | null>(null);
 
-  const copy = mode === "signin" ? SIGNIN_COPY : SIGNUP_COPY;
-
   const showToast = (message: string, kind: ToastKind) =>
     setToast({ message, kind, token: Date.now() });
 
-  const toggleMode = () => {
-    setToast(null);
-    setMode((m) => (m === "signin" ? "signup" : "signin"));
+  const clearToast = () => setToast(null);
+
+  const switchMode = (next: Mode) => {
+    clearToast();
+    setMode(next);
   };
 
   const handleSubmit = async () => {
     const trimmedEmail = email.trim();
-    if (!trimmedEmail || !password) {
-      showToast("E-posta ve şifre gerekli.", "error");
+    if (!trimmedEmail) {
+      showToast(t("auth.error.emptyEmail"), "error");
+      return;
+    }
+    if (mode !== "recover" && !password) {
+      showToast(t("auth.error.emptyFields"), "error");
       return;
     }
     setSubmitting(true);
-    setToast(null);
+    clearToast();
     try {
       if (mode === "signup") {
         const data = await signUp(trimmedEmail, password);
@@ -57,24 +70,33 @@ export function AuthScreen({ onSignedIn }: Props) {
           onSignedIn(sess);
           return;
         }
-        showToast(
-          `${trimmedEmail} adresine bir onay e-postası gönderildi. Gelen kutunu kontrol et; bağlantıya tıkla, sonra buradan giriş yap.`,
-          "success"
-        );
+        showToast(t("auth.success.signUp", { email: trimmedEmail }), "success");
         setMode("signin");
         setPassword("");
-      } else {
+      } else if (mode === "signin") {
         const sess = await signIn(trimmedEmail, password);
         await saveSession(sess);
         onSignedIn(sess);
+      } else {
+        await recoverPassword(trimmedEmail);
+        showToast(t("auth.success.recover", { email: trimmedEmail }), "success");
+        setMode("signin");
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      showToast(friendlyAuthError(msg), "error");
+      const raw = err instanceof Error ? err.message : String(err);
+      const key = authErrorKey(raw);
+      showToast(key ? t(key) : raw, "error");
     } finally {
       setSubmitting(false);
     }
   };
+
+  const titleKey =
+    mode === "signup" ? "auth.signUp.title" : mode === "recover" ? "auth.recover.title" : "auth.signIn.title";
+  const subtitleKey =
+    mode === "signup" ? "auth.signUp.subtitle" : mode === "recover" ? "auth.recover.subtitle" : "auth.signIn.subtitle";
+  const submitKey =
+    mode === "signup" ? "auth.submit.signUp" : mode === "recover" ? "auth.submit.recover" : "auth.submit.signIn";
 
   return (
     <KeyboardAvoidingView
@@ -82,16 +104,19 @@ export function AuthScreen({ onSignedIn }: Props) {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <StatusBar style="dark" />
+      <View style={styles.topBar}>
+        <LocaleToggle />
+      </View>
       <ScrollView
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.card}>
-          <Text style={styles.title}>{copy.title}</Text>
-          <Text style={styles.subtitle}>{copy.subtitle}</Text>
+          <Text style={styles.title}>{t(titleKey)}</Text>
+          <Text style={styles.subtitle}>{t(subtitleKey)}</Text>
 
           <View style={styles.field}>
-            <Text style={styles.label}>E-POSTA</Text>
+            <Text style={styles.label}>{t("auth.emailLabel")}</Text>
             <TextInput
               value={email}
               onChangeText={setEmail}
@@ -99,7 +124,7 @@ export function AuthScreen({ onSignedIn }: Props) {
               autoCapitalize="none"
               autoCorrect={false}
               autoComplete="email"
-              placeholder="ornek@mail.com"
+              placeholder={t("auth.emailPlaceholder")}
               placeholderTextColor={colors.textSubtle}
               style={styles.input}
               selectionColor={colors.primary}
@@ -107,21 +132,28 @@ export function AuthScreen({ onSignedIn }: Props) {
             />
           </View>
 
-          <View style={styles.field}>
-            <Text style={styles.label}>ŞİFRE</Text>
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoCapitalize="none"
-              autoComplete={mode === "signup" ? "new-password" : "current-password"}
-              placeholder="En az 6 karakter"
-              placeholderTextColor={colors.textSubtle}
-              style={styles.input}
-              selectionColor={colors.primary}
-              editable={!submitting}
-            />
-          </View>
+          {mode !== "recover" ? (
+            <View style={styles.field}>
+              <Text style={styles.label}>{t("auth.passwordLabel")}</Text>
+              <TextInput
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                autoCapitalize="none"
+                autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                placeholder={t("auth.passwordPlaceholder")}
+                placeholderTextColor={colors.textSubtle}
+                style={styles.input}
+                selectionColor={colors.primary}
+                editable={!submitting}
+              />
+              {mode === "signin" ? (
+                <Pressable onPress={() => switchMode("recover")} hitSlop={6} style={styles.forgotBtn}>
+                  <Text style={styles.forgotText}>{t("auth.forgot")}</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
 
           {toast ? (
             <View style={{ marginTop: spacing[1] }}>
@@ -141,47 +173,52 @@ export function AuthScreen({ onSignedIn }: Props) {
             {submitting ? (
               <ActivityIndicator color={colors.white} />
             ) : (
-              <Text style={styles.submitText}>{copy.submit}</Text>
+              <Text style={styles.submitText}>{t(submitKey)}</Text>
             )}
           </Pressable>
 
-          <View style={styles.switchRow}>
-            <Text style={styles.switchText}>{copy.switchQuestion}</Text>
-            <Pressable onPress={toggleMode} hitSlop={6}>
-              <Text style={styles.switchLink}>{copy.switchAction}</Text>
-            </Pressable>
-          </View>
+          {mode === "signin" ? (
+            <View style={styles.switchRow}>
+              <Text style={styles.switchText}>{t("auth.switch.toSignUp.q")}</Text>
+              <Pressable onPress={() => switchMode("signup")} hitSlop={6}>
+                <Text style={styles.switchLink}>{t("auth.switch.toSignUp.a")}</Text>
+              </Pressable>
+            </View>
+          ) : mode === "signup" ? (
+            <View style={styles.switchRow}>
+              <Text style={styles.switchText}>{t("auth.switch.toSignIn.q")}</Text>
+              <Pressable onPress={() => switchMode("signin")} hitSlop={6}>
+                <Text style={styles.switchLink}>{t("auth.switch.toSignIn.a")}</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.switchRow}>
+              <Pressable onPress={() => switchMode("signin")} hitSlop={6}>
+                <Text style={styles.switchLink}>{t("auth.backToSignIn")}</Text>
+              </Pressable>
+            </View>
+          )}
         </View>
 
-        <Text style={styles.footer}>Bahçem · Niyet yönetim uygulaması</Text>
+        <Text style={styles.footer}>{t("auth.footer")}</Text>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
-const SIGNIN_COPY = {
-  title: "Bahçene Gir",
-  subtitle: "Niyetlerini kaydet ve takip et.",
-  submit: "Giriş Yap",
-  switchQuestion: "Henüz hesabın yok mu?",
-  switchAction: "Hesap oluştur",
-};
-
-const SIGNUP_COPY = {
-  title: "Bahçeni Oluştur",
-  subtitle: "Kendi niyet koleksiyonunu kurmaya başla.",
-  submit: "Hesap Oluştur",
-  switchQuestion: "Zaten hesabın var mı?",
-  switchAction: "Giriş yap",
-};
-
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.background },
+  topBar: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    paddingHorizontal: spacing[5],
+    paddingTop: Platform.OS === "ios" ? 60 : 40,
+  },
   scroll: {
     flexGrow: 1,
     justifyContent: "center",
     paddingHorizontal: spacing[5],
-    paddingVertical: spacing[8],
+    paddingVertical: spacing[5],
   },
   card: {
     backgroundColor: colors.surface,
@@ -221,6 +258,16 @@ const styles = StyleSheet.create({
     paddingVertical: Platform.OS === "ios" ? 12 : 10,
     minHeight: 44,
     color: colors.text,
+  },
+  forgotBtn: {
+    alignSelf: "flex-end",
+    paddingVertical: spacing[1],
+  },
+  forgotText: {
+    ...typography.caption,
+    color: colors.primary,
+    fontWeight: "600",
+    fontSize: 12,
   },
   submit: {
     marginTop: spacing[2],

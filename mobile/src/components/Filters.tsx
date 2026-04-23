@@ -2,19 +2,21 @@ import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { colors, radii, spacing, typography } from "../theme";
 import type { FilterMode } from "../types";
+import { useI18n, type StringKey } from "../i18n";
 
 interface Props {
   value: FilterMode;
   onChange: (v: FilterMode) => void;
 }
 
-const OPTIONS: { value: FilterMode; label: string }[] = [
-  { value: "all", label: "Tümü" },
-  { value: "active", label: "Filizlenenler" },
-  { value: "completed", label: "Çiçeklenenler" },
+const OPTIONS: { value: FilterMode; labelKey: StringKey }[] = [
+  { value: "all", labelKey: "app.filter.all" },
+  { value: "active", labelKey: "app.filter.active" },
+  { value: "completed", labelKey: "app.filter.completed" },
 ];
 
 export function Filters({ value, onChange }: Props) {
+  const { t } = useI18n();
   return (
     <View style={styles.wrap}>
       {OPTIONS.map((opt) => {
@@ -25,7 +27,7 @@ export function Filters({ value, onChange }: Props) {
             onPress={() => onChange(opt.value)}
             style={[styles.btn, active && styles.btnActive]}
           >
-            <Text style={[styles.label, active && styles.labelActive]}>{opt.label}</Text>
+            <Text style={[styles.label, active && styles.labelActive]}>{t(opt.labelKey)}</Text>
           </Pressable>
         );
       })}
