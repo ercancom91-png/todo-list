@@ -28,6 +28,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "922d104b-4b5b-4f87-957c-564e270fece3"
+      }
+    },
+    "owner": "brucebanner"
   }
 }
